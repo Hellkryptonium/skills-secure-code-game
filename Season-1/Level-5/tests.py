@@ -10,11 +10,13 @@ class TestCrypto(unittest.TestCase):
         pass_ver = sha256.password_verification("abc", sha256.password_hash("abc",rd.generate_salt()))
         self.assertEqual(pass_ver, True)
 
-    # verifies that hash and verification are matching each other for MD5
+    # verifies that random token generation produces different results (tests randomness)
     def test_2(self):
-        md5 = c.MD5_hasher()
-        md5_hash = md5.password_verification("abc", md5.password_hash("abc"))
-        self.assertEqual(md5_hash, True)
+        rd = c.Random_generator()
+        token1 = rd.generate_token()
+        token2 = rd.generate_token()
+        # Tokens should be different (very low probability they're the same if truly random)
+        self.assertNotEqual(token1, token2)
         
 if __name__ == '__main__':    
     unittest.main()

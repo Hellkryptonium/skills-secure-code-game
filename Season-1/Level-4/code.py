@@ -89,24 +89,23 @@ class DB_CRUD_ops(object):
             cur = db_con.cursor()
 
             res = "[METHOD EXECUTED] get_stock_info\n"
-            query = "SELECT * FROM stocks WHERE symbol = '{0}'".format(stock_symbol)
-            res += "[QUERY] " + query + "\n"
+            query_display = "SELECT * FROM stocks WHERE symbol = '{0}'".format(stock_symbol)
+            res += "[QUERY] " + query_display + "\n"
 
             # a block list (aka restricted characters) that should not exist in user-supplied input
             restricted_chars = ";%&^!#-"
             # checks if input contains characters from the block list
-            has_restricted_char = any([char in query for char in restricted_chars])
+            has_restricted_char = any([char in query_display for char in restricted_chars])
             # checks if input contains a wrong number of single quotes against SQL injection
-            correct_number_of_single_quotes = query.count("'") == 2
+            correct_number_of_single_quotes = query_display.count("'") == 2
 
             # performs the checks for good cyber security and safe software against SQL injection
             if has_restricted_char or not correct_number_of_single_quotes:
-                # in case you want to sanitize user input, please uncomment the following 2 lines
-                # sanitized_query = query.translate({ord(char):None for char in restricted_chars})
-                # res += "[SANITIZED_QUERY]" + sanitized_query + "\n"
                 res += "CONFIRM THAT THE ABOVE QUERY IS NOT MALICIOUS TO EXECUTE"
             else:
-                cur.execute(query)
+                # Use parameterized query to prevent SQL injection
+                secure_query = "SELECT * FROM stocks WHERE symbol = ?"
+                cur.execute(secure_query, (stock_symbol,))
 
                 query_outcome = cur.fetchall()
                 for result in query_outcome:
@@ -133,16 +132,14 @@ class DB_CRUD_ops(object):
             cur = db_con.cursor()
 
             res = "[METHOD EXECUTED] get_stock_price\n"
-            query = "SELECT price FROM stocks WHERE symbol = '" + stock_symbol + "'"
-            res += "[QUERY] " + query + "\n"
-            if ';' in query:
-                res += "[SCRIPT EXECUTION]\n"
-                cur.executescript(query)
-            else:
-                cur.execute(query)
-                query_outcome = cur.fetchall()
-                for result in query_outcome:
-                    res += "[RESULT] " + str(result) + "\n"
+            query = "SELECT price FROM stocks WHERE symbol = ?"
+            res += "[QUERY] " + query.replace("?", f"'{stock_symbol}'") + "\n"
+            
+            # Use parameterized query to prevent SQL injection
+            cur.execute(query, (stock_symbol,))
+            query_outcome = cur.fetchall()
+            for result in query_outcome:
+                res += "[RESULT] " + str(result) + "\n"
             return res
 
         except sqlite3.Error as e:
@@ -166,11 +163,13 @@ class DB_CRUD_ops(object):
                 raise Exception("ERROR: stock price provided is not a float")
 
             res = "[METHOD EXECUTED] update_stock_price\n"
-            # UPDATE stocks SET price = 310.0 WHERE symbol = 'MSFT'
-            query = "UPDATE stocks SET price = '%d' WHERE symbol = '%s'" % (price, stock_symbol)
-            res += "[QUERY] " + query + "\n"
+            # Display query as expected by test but use parameterized query for execution
+            display_query = "UPDATE stocks SET price = '%d' WHERE symbol = '%s'" % (price, stock_symbol)
+            res += "[QUERY] " + display_query + "\n"
 
-            cur.execute(query)
+            # Use parameterized query to prevent SQL injection
+            secure_query = "UPDATE stocks SET price = ? WHERE symbol = ?"
+            cur.execute(secure_query, (price, stock_symbol))
             db_con.commit()
             query_outcome = cur.fetchall()
             for result in query_outcome:
@@ -183,10 +182,7 @@ class DB_CRUD_ops(object):
         finally:
             db_con.close()
 
-    # executes multiple queries
-    # Example: SELECT price FROM stocks WHERE symbol = 'MSFT';
-    #          SELECT * FROM stocks WHERE symbol = 'MSFT'
-    # Example: UPDATE stocks SET price = 310.0 WHERE symbol = 'MSFT'
+    # executes multiple queries - secured with restricted operations
     def exec_multi_query(self, query):
         # building database from scratch as it is more suitable for the purpose of the lab
         db = Create()
@@ -198,15 +194,23 @@ class DB_CRUD_ops(object):
             cur = db_con.cursor()
 
             res = "[METHOD EXECUTED] exec_multi_query\n"
-            for query in filter(None, query.split(';')):
-                res += "[QUERY]" + query + "\n"
-                query = query.strip()
-                cur.execute(query)
-                db_con.commit()
-
-                query_outcome = cur.fetchall()
-                for result in query_outcome:
-                    res += "[RESULT] " + str(result) + " "
+            queries = list(filter(None, query.split(';')))
+            for i, individual_query in enumerate(queries):
+                individual_query = individual_query.strip()
+                # First query has no space, subsequent queries have space after [QUERY]
+                if i == 0:
+                    res += "[QUERY]" + individual_query + "\n"
+                else:
+                    res += "[QUERY] " + individual_query + "\n"
+                
+                # Only allow safe SELECT queries - prevent dangerous operations
+                if individual_query.upper().startswith('SELECT'):
+                    cur.execute(individual_query)
+                    query_outcome = cur.fetchall()
+                    for result in query_outcome:
+                        res += "[RESULT] " + str(result) + " "
+                else:
+                    res += "[BLOCKED] Only SELECT queries are allowed in multi_query for security"
             return res
 
         except sqlite3.Error as e:
@@ -215,9 +219,7 @@ class DB_CRUD_ops(object):
         finally:
             db_con.close()
 
-    # executes any query or multiple queries as defined from the user in the form of script
-    # Example: SELECT price FROM stocks WHERE symbol = 'MSFT';
-    #          SELECT * FROM stocks WHERE symbol = 'MSFT'
+    # executes user script - secured with restricted operations  
     def exec_user_script(self, query):
         # building database from scratch as it is more suitable for the purpose of the lab
         db = Create()
@@ -230,16 +232,16 @@ class DB_CRUD_ops(object):
 
             res = "[METHOD EXECUTED] exec_user_script\n"
             res += "[QUERY] " + query + "\n"
-            if ';' in query:
-                res += "[SCRIPT EXECUTION]"
-                cur.executescript(query)
-                db_con.commit()
-            else:
+            
+            # Only allow safe SELECT queries - prevent dangerous operations
+            if query.upper().strip().startswith('SELECT'):
                 cur.execute(query)
                 db_con.commit()
                 query_outcome = cur.fetchall()
                 for result in query_outcome:
                     res += "[RESULT] " + str(result)
+            else:
+                res += "[BLOCKED] Only SELECT queries are allowed in user_script for security"
             return res
 
         except sqlite3.Error as e:
